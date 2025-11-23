@@ -33,8 +33,7 @@ mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
     const predictionCol = mongoose.connection.db.collection('predictions');
 
     listCollections();
-
-    runMLLoop(masterDataCol, predictionCol); // start ML prediction loop
+    runMLLoop(masterDataCol, predictionCol);
 })
 .catch(err => {
     console.error('❌ MongoDB connection error:', err.message);
@@ -78,8 +77,10 @@ authRouter.post('/login', async (req, res) => {
     try {
         const user = await User.findOne({ email });
         if (!user) return res.status(404).json({ error: 'User not found' });
+
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.status(401).json({ error: 'Invalid password' });
+
         res.json({ message: 'Login successful', userId: user._id, name: user.name });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -111,15 +112,14 @@ app.get('/api/predictions', async (req, res) => {
     }
 });
 
-// ==== Apply Auth Routes ====
+// ==== Auth Routes Applied ====
 app.use('/api/auth', rateLimit({ windowMs: 15*60*1000, max: 100 }), authRouter);
 
-// ==== Static Client (Optional) ====
+// ==== Production Handler (NO "*" wildcard) ====
 if (NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, '../client/build')));
-    app.get('*', (req, res) => 
-        res.sendFile(path.join(__dirname, '../client/build', 'index.html'))
-    );
+    app.get('/', (req, res) => {
+        res.json({ status: "Backend running in production" });
+    });
 }
 
 // ==== Error Handling ====
@@ -131,14 +131,13 @@ app.use((err, req, res, next) => {
 
 // ==== Start Server ====
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running at http://10.150.216.165:${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
 });
 
-// ==== ML Prediction Loop every 15s ====
+// ==== ML Loop ====
 function predictRisk(data) {
-    // Mock regression-based probability
-    const score = 0.4*data.TGS2620 + 0.3*data.TGS2602 + 0.3*data.TGS2600;
-    return Math.min(Math.max(score, 0), 100); // Clamp 0-100
+    const score = 0.4 * data.TGS2620 + 0.3 * data.TGS2602 + 0.3 * data.TGS2600;
+    return Math.min(Math.max(score, 0), 100);
 }
 
 async function runMLLoop(masterDataCol, predictionCol) {
@@ -156,16 +155,17 @@ async function runMLLoop(masterDataCol, predictionCol) {
                     tgs2600: d.TGS2600,
                     timestamp: d.Timestamp,
                     riskScore,
-                    status: riskScore > 50 ? 'High' : riskScore > 20 ? 'Medium' : 'Low'
+                    status: riskScore > 50 ? 'High' :
+                            riskScore > 20 ? 'Medium' : 'Low'
                 };
             });
 
-            await predictionCol.deleteMany({}); // optional: keep only latest
+            await predictionCol.deleteMany({});
             await predictionCol.insertMany(predictions);
 
-            console.log('🔹 Predictions updated:', new Date().toLocaleTimeString());
+            console.log("🔹 Predictions updated:", new Date().toLocaleTimeString());
         } catch (err) {
-            console.error('ML Loop Error:', err);
+            console.error("ML Loop Error:", err);
         }
     }, 15000);
 }
