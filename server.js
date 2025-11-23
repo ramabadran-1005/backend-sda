@@ -6,7 +6,6 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
 const morgan = require('morgan');
-const path = require('path');
 const bcrypt = require('bcrypt');
 
 // ==== Config ====
@@ -20,12 +19,16 @@ const app = express();
 // ==== Middleware ====
 app.use(helmet());
 app.use(compression());
-app.use(cors({ origin: '*', methods: ['GET','POST','PUT','DELETE'], allowedHeaders: ['Content-Type','Authorization'] }));
+app.use(cors({
+    origin: '*',
+    methods: ['GET','POST','PUT','DELETE'],
+    allowedHeaders: ['Content-Type','Authorization']
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
 
-// ==== MongoDB Connection ====
-mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+// ==== MongoDB Connection (Mongoose v7 SAFE) ====
+mongoose.connect(MONGO_URI)
 .then(async () => {
     console.log('✅ MongoDB connected');
 
@@ -81,7 +84,12 @@ authRouter.post('/login', async (req, res) => {
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.status(401).json({ error: 'Invalid password' });
 
-        res.json({ message: 'Login successful', userId: user._id, name: user.name });
+        res.json({
+            message: 'Login successful',
+            userId: user._id,
+            name: user.name
+        });
+
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -112,10 +120,10 @@ app.get('/api/predictions', async (req, res) => {
     }
 });
 
-// ==== Auth Routes Applied ====
+// ==== Apply Auth Routes ====
 app.use('/api/auth', rateLimit({ windowMs: 15*60*1000, max: 100 }), authRouter);
 
-// ==== Production Handler (NO "*" wildcard) ====
+// ==== Production Root Route (NO wildcard) ====
 if (NODE_ENV === 'production') {
     app.get('/', (req, res) => {
         res.json({ status: "Backend running in production" });
@@ -124,6 +132,7 @@ if (NODE_ENV === 'production') {
 
 // ==== Error Handling ====
 app.use((req, res, next) => res.status(404).json({ error: 'Not Found' }));
+
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({ error: 'Server Error' });
@@ -134,7 +143,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${PORT}`);
 });
 
-// ==== ML Loop ====
+// ==== ML Prediction Logic ====
 function predictRisk(data) {
     const score = 0.4 * data.TGS2620 + 0.3 * data.TGS2602 + 0.3 * data.TGS2600;
     return Math.min(Math.max(score, 0), 100);
@@ -155,8 +164,9 @@ async function runMLLoop(masterDataCol, predictionCol) {
                     tgs2600: d.TGS2600,
                     timestamp: d.Timestamp,
                     riskScore,
-                    status: riskScore > 50 ? 'High' :
-                            riskScore > 20 ? 'Medium' : 'Low'
+                    status:
+                        riskScore > 50 ? 'High' :
+                        riskScore > 20 ? 'Medium' : 'Low'
                 };
             });
 
