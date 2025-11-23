@@ -1,0 +1,14 @@
+node_modules/
+*.zip
+.env
+*.log
+__pycache__/
+*.tar.gz
+*.7z
+*.rar
+iot_dashboard_app*
+ml/
+*.bin
+build/
+dist/
+
